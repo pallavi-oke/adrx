@@ -1,0 +1,6 @@
+anthropic
+click
+pandas
+rich
+plotext
+python-dotenv
