@@ -163,21 +163,30 @@ def detect_budget_pacing(df: pd.DataFrame, budgets: dict) -> dict:
     }
 
 
-def find_anomalies(df: pd.DataFrame, metric: str = "cpa", min_deviation_pct: float = 40) -> dict:
+def find_anomalies(
+    df: pd.DataFrame,
+    metric: str = "cpa",
+    min_deviation_pct: float = 40,
+    min_baseline_conversions: int = 5,
+) -> dict:
     """
     Compare each keyword's recent 7-day metric value against its 30-day baseline
     and flag those that deviate by more than min_deviation_pct percent.
 
     Parameters
     ----------
-    metric            : 'cpa' or 'roas'
-    min_deviation_pct : minimum absolute percent change to flag (default 40)
+    metric                    : 'cpa' or 'roas'
+    min_deviation_pct         : minimum absolute percent change to flag (default 40)
+    min_baseline_conversions  : keywords with fewer conversions than this in the
+                                baseline window are skipped — their metrics are too
+                                noisy to distinguish real change from random variance
+                                (default 5)
 
     Returns
     -------
     dict with up to 10 flagged keywords, sorted by magnitude of deviation.
-    Each entry: keyword, baseline_value, recent_value, pct_change, direction
-    ('spike' | 'drop'). For CPA, a spike is bad; for ROAS, a drop is bad.
+    Each entry includes volume context (recent and baseline conversions and cost)
+    so the caller can judge statistical confidence alongside the metric change.
     """
     if metric not in ("cpa", "roas"):
         raise ValueError(f"metric must be 'cpa' or 'roas' — got {metric!r}")
@@ -186,19 +195,29 @@ def find_anomalies(df: pd.DataFrame, metric: str = "cpa", min_deviation_pct: flo
     rec  = _recent(df)
     base = _baseline(df)
 
-    def metric_value(sub: pd.DataFrame):
+    def agg_window(sub: pd.DataFrame) -> dict:
         cost        = sub["cost"].sum()
         revenue     = sub["revenue"].sum()
-        conversions = sub["conversions"].sum()
+        conversions = int(sub["conversions"].sum())
         if metric == "cpa":
-            return _cpa(cost, conversions)
-        return _roas(cost, revenue)
+            value = _cpa(cost, conversions)
+        else:
+            value = _roas(cost, revenue)
+        return {"value": value, "conversions": conversions, "cost": round(cost, 2)}
 
     flagged = []
     for kw, rec_sub in rec.groupby("keyword"):
-        base_sub  = base[base["keyword"] == kw]
-        rec_val   = metric_value(rec_sub)
-        base_val  = metric_value(base_sub)
+        base_sub = base[base["keyword"] == kw]
+
+        rec_agg  = agg_window(rec_sub)
+        base_agg = agg_window(base_sub)
+
+        # Skip keywords with too few baseline conversions — CPA/ROAS is unreliable
+        if base_agg["conversions"] < min_baseline_conversions:
+            continue
+
+        rec_val  = rec_agg["value"]
+        base_val = base_agg["value"]
 
         if rec_val is None or base_val is None or base_val == 0:
             continue
@@ -208,22 +227,29 @@ def find_anomalies(df: pd.DataFrame, metric: str = "cpa", min_deviation_pct: flo
             continue
 
         flagged.append({
-            "keyword":        kw,
-            "metric":         metric,
-            "baseline_value": base_val,
-            "recent_value":   rec_val,
-            "pct_change":     round(pct_change, 1),
-            "direction":      "spike" if pct_change > 0 else "drop",
+            "keyword":              kw,
+            "metric":               metric,
+            "baseline_value":       base_val,
+            "recent_value":         rec_val,
+            "pct_change":           round(pct_change, 1),
+            "direction":            "spike" if pct_change > 0 else "drop",
+            # Volume context — use these to assess statistical confidence.
+            # A large pct_change on low conversion volume is likely noise.
+            "recent_conversions":   rec_agg["conversions"],
+            "recent_cost":          rec_agg["cost"],
+            "baseline_conversions": base_agg["conversions"],
+            "baseline_cost":        base_agg["cost"],
         })
 
     flagged.sort(key=lambda x: abs(x["pct_change"]), reverse=True)
 
     return {
-        "metric":              metric,
-        "min_deviation_pct":   min_deviation_pct,
-        "recent_window":       _window_label(w["recent_start"], w["yesterday"]),
-        "baseline_window":     _window_label(w["baseline_start"], w["baseline_end"]),
-        "flagged_keywords":    flagged[:10],
+        "metric":                   metric,
+        "min_deviation_pct":        min_deviation_pct,
+        "min_baseline_conversions": min_baseline_conversions,
+        "recent_window":            _window_label(w["recent_start"], w["yesterday"]),
+        "baseline_window":          _window_label(w["baseline_start"], w["baseline_end"]),
+        "flagged_keywords":         flagged[:10],
     }
 
 
@@ -405,8 +431,14 @@ TOOL_SCHEMAS = [
             "the change exceeds min_deviation_pct. Use metric='cpa' to catch keywords where "
             "cost-per-acquisition has spiked (a spike is bad — the keyword is becoming less "
             "efficient). Use metric='roas' to catch keywords where return on spend has dropped. "
-            "Returns up to 10 keywords ranked by the magnitude of the deviation, with baseline "
-            "value, recent value, percent change, and direction (spike/drop)."
+            "Returns up to 10 keywords ranked by magnitude of deviation. Each result includes "
+            "volume context: recent_conversions, recent_cost, baseline_conversions, baseline_cost. "
+            "IMPORTANT: use these volume fields to assess confidence before surfacing a finding. "
+            "A keyword with fewer than 5 baseline conversions or fewer than 3 recent conversions "
+            "has too little data for its metric change to be statistically meaningful — treat it "
+            "as noise and do not include it in the briefing. Keywords with low spend (under $50) "
+            "in the recent window should also be deprioritized regardless of pct_change magnitude. "
+            "Only flag findings where the volume is large enough to trust the signal."
         ),
         "input_schema": {
             "type": "object",
@@ -427,6 +459,16 @@ TOOL_SCHEMAS = [
                         "Default is 40 (flag anything that changed by 40% or more)."
                     ),
                     "default": 40,
+                },
+                "min_baseline_conversions": {
+                    "type": "integer",
+                    "description": (
+                        "Keywords with fewer conversions than this in the 30-day baseline are "
+                        "excluded before computing the metric — their CPA or ROAS is too noisy "
+                        "to distinguish real change from random variance. Default is 5. "
+                        "Increase to 10 if you want higher confidence findings only."
+                    ),
+                    "default": 5,
                 },
             },
             "required": ["metric"],
