@@ -5,10 +5,12 @@ Fixed reference date: 2026-04-13 (yesterday relative to 2026-04-14).
 60 days of daily data ending on that date.
 
 Embedded signals:
-  A) "home insurance quotes" — CPC spike ~65% in last 7 days vs prior baseline
+  A) "home insurance quotes" — CPA spike ~2x in last 7 days vs prior 30-day avg
+     (CVR halved; same CPC — realistic landing page / offer degradation pattern)
   B) "Solar Leads Q1" — pacing ~23% under budget in last 7 days (~$385/day vs $500)
   C) 3-4 zero-conversion irrelevant search terms appeared in last 10 days
-  D) "solar installation near me" — quietly overperforming (high CVR, room to scale)
+  D) "solar installation near me" — high ROAS overperformer with room to scale
+     (strong CVR + higher revenue per conversion vs campaign peers)
 """
 
 import random
@@ -38,8 +40,8 @@ STRUCTURE = {
                 "buy solar panels":      dict(cpc=2.80, ctr=0.030, cvr=0.035, impr=750),
             },
             "Solar Local": {
-                # Signal D — overperformer
-                "solar installation near me": dict(cpc=3.20, ctr=0.045, cvr=0.092, impr=400),
+                # Signal D — ROAS overperformer: strong CVR + higher rev/conv vs peers
+                "solar installation near me": dict(cpc=3.20, ctr=0.045, cvr=0.075, impr=400),
                 # 2 kw × ~$63/day ≈ $126
                 "solar company near me":      dict(cpc=2.80, ctr=0.030, cvr=0.038, impr=750),
                 "local solar installer":      dict(cpc=2.80, ctr=0.030, cvr=0.040, impr=750),
@@ -64,8 +66,9 @@ STRUCTURE = {
                 "best home insurance":     dict(cpc=4.80, ctr=0.035, cvr=0.042, impr=250),
             },
             "Insurance Quotes": {
-                # Signal A — CPC spike last 7 days
-                "home insurance quotes":      dict(cpc=4.50, ctr=0.038, cvr=0.055, impr=220),
+                # Signal A — CPA spike last 7 days; impr high enough to yield
+                # measurable conversions (~46 clicks/day, ~2.5 conv/day baseline)
+                "home insurance quotes":      dict(cpc=4.50, ctr=0.038, cvr=0.055, impr=1200),
                 "home insurance quote online":dict(cpc=5.20, ctr=0.042, cvr=0.058, impr=200),
                 "cheap home insurance":       dict(cpc=5.20, ctr=0.042, cvr=0.050, impr=200),
                 "compare home insurance":     dict(cpc=5.20, ctr=0.042, cvr=0.055, impr=200),
@@ -106,11 +109,11 @@ for date in DATES:
                 cvr  = p["cvr"]
                 impr_base = p["impr"]
 
-                # Signal A — CPC spike for "home insurance quotes" in last 7 days
+                # Signal A — CVR drop for "home insurance quotes" in last 7 days
+                # CPC stays normal; CVR halves → CPA roughly doubles vs 30-day avg
                 if keyword == "home insurance quotes" and last7:
-                    cpc = jitter(cpc * 1.67, pct=0.06)   # ~67% higher → ~7.50
-                else:
-                    cpc = jitter(cpc, pct=0.12)
+                    cvr = cvr * 0.40   # ~60% CVR drop → ~2x CPA spike
+                cpc = jitter(cpc, pct=0.12)
 
                 # Signal B — Solar Leads Q1 under-pacing last 7 days
                 # Baseline ≈ $577/day; suppress 0.667× → ~$385/day (~23% under $500)
@@ -121,15 +124,18 @@ for date in DATES:
                 clicks     = max(0, int(round(impr * jitter(ctr, pct=0.18))))
                 cost       = round(clicks * max(0, cpc), 2)
 
-                # Signal D — "solar installation near me" has tight, consistently
-                # high CVR; other keywords get more noise
+                # Signal D — "solar installation near me" gets tighter CVR noise
+                # and a higher revenue per conversion, producing a standout ROAS
                 cvr_noise = 0.10 if keyword == "solar installation near me" else 0.22
-                eff_cvr    = max(0, jitter(cvr, pct=cvr_noise))
+                eff_cvr   = max(0, jitter(cvr, pct=cvr_noise))
                 conversions = int(round(clicks * eff_cvr))
 
-                rev_per_conv = jitter(
-                    180 if campaign == "Solar Leads Q1" else 120, pct=0.15
-                )
+                if keyword == "solar installation near me":
+                    rev_per_conv = jitter(260, pct=0.10)   # premium installs → higher job value
+                elif campaign == "Solar Leads Q1":
+                    rev_per_conv = jitter(180, pct=0.15)
+                else:
+                    rev_per_conv = jitter(120, pct=0.15)
                 revenue = round(conversions * rev_per_conv, 2)
 
                 rows.append({
@@ -173,14 +179,14 @@ print(f"Wrote {len(df):,} rows to examples/sample_campaigns.csv")
 df["date"] = pd.to_datetime(df["date"])
 cutoff7 = pd.Timestamp("2026-04-07")
 
-# Signal A
-hiq = df[df["keyword"] == "home insurance quotes"].copy()
-hiq["cpc_est"] = hiq.apply(
-    lambda r: r["cost"] / r["clicks"] if r["clicks"] > 0 else 0, axis=1
-)
-pre  = hiq[hiq["date"] < cutoff7]["cpc_est"].mean()
-post = hiq[hiq["date"] >= cutoff7]["cpc_est"].mean()
-print(f"\nSignal A — 'home insurance quotes' avg CPC:  pre=${pre:.2f}  post=${post:.2f}  spike={post/pre:.1f}x")
+# Signal A — CPA spike: aggregate cost/conversions over each window
+hiq = df[df["keyword"] == "home insurance quotes"]
+pre30_start = cutoff7 - pd.Timedelta(days=30)
+pre_win  = hiq[(hiq["date"] >= pre30_start) & (hiq["date"] < cutoff7)]
+post_win = hiq[hiq["date"] >= cutoff7]
+pre_cpa  = pre_win["cost"].sum()  / pre_win["conversions"].sum()
+post_cpa = post_win["cost"].sum() / post_win["conversions"].sum()
+print(f"\nSignal A — 'home insurance quotes' agg CPA:  30d-pre=${pre_cpa:.2f}  last-7d=${post_cpa:.2f}  spike={post_cpa/pre_cpa:.1f}x")
 
 # Signal B
 solar  = df[(df["campaign"] == "Solar Leads Q1") & (df["date"] >= cutoff7)]
@@ -198,11 +204,17 @@ for kw in junk_kws:
     sub = junk[junk["keyword"] == kw]
     print(f"           {kw!r}: {len(sub)} rows, ${sub['cost'].sum():.0f} spend, {sub['conversions'].sum()} conv")
 
-# Signal D
-sol = df[df["keyword"] == "solar installation near me"].copy()
-sol["cvr"] = sol.apply(lambda r: r["conversions"] / r["clicks"] if r["clicks"] > 0 else 0, axis=1)
-avg_solar_cvr = df[
-    (df["campaign"] == "Solar Leads Q1") & (df["keyword"] != "solar installation near me")
-].pipe(lambda x: x[x["clicks"] > 0]).apply(lambda r: r["conversions"] / r["clicks"], axis=1).mean()
-print(f"\nSignal D — 'solar installation near me':  CVR={sol['cvr'].mean():.1%}  avg clicks/day={sol['clicks'].mean():.1f}")
-print(f"           Other Solar Leads Q1 keywords: avg CVR={avg_solar_cvr:.1%}")
+# Signal D — ROAS overperformer
+def roas(sub):
+    cost = sub["cost"].sum()
+    return sub["revenue"].sum() / cost if cost > 0 else 0
+
+sol_mask  = df["keyword"] == "solar installation near me"
+peer_mask = (df["campaign"] == "Solar Leads Q1") & ~sol_mask & ~df["keyword"].isin([j[2] for j in JUNK_TERMS])
+
+sol_roas  = roas(df[sol_mask])
+peer_roas = roas(df[peer_mask])
+sol_clicks_day = df[sol_mask].groupby("date")["clicks"].sum().mean()
+
+print(f"\nSignal D — 'solar installation near me':  ROAS={sol_roas:.1f}x  avg clicks/day={sol_clicks_day:.1f}")
+print(f"           Other Solar Leads Q1 peers:     ROAS={peer_roas:.1f}x")
