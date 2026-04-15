@@ -60,7 +60,7 @@ Color-coded terminal morning briefing + optional JSON file
 
 ## Key Design Decisions
 
-- **Three findings, hard cap.** A briefing with 10 findings is noise; 3 is a decision aid. The agent is instructed to prioritize by ROAS impact and actionability. 
+- **Five findings, hard cap.** A briefing with 10 findings is noise; 5 is a useful morning scan. The agent is instructed to prioritize by ROAS impact and actionability, and to balance risks (problems to fix) with opportunities (winners to scale) when both exist in the data. 
 
 - **Rule-based tools, reasoning agent.** The analysis functions compute standard metrics; the agent reasons about which to run, how to interpret them, and which findings are worth surfacing. The alternative — letting the agent write its own pandas code on the fly — would be more flexible but far less reliable for a v1.
 
