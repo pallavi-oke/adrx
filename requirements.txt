@@ -4,3 +4,5 @@ pandas
 rich
 plotext
 python-dotenv
+jinja2
+plotly

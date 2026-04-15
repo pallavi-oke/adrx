@@ -319,6 +319,131 @@ def find_new_search_terms(
     }
 
 
+def get_account_trends(df: pd.DataFrame, days: int = 7) -> dict:
+    """
+    Return daily time-series data for the last `days` days across all campaigns.
+
+    Parameters
+    ----------
+    days : int
+        Number of trailing days to return (default 7).
+
+    Returns
+    -------
+    dict with:
+      dates         — list of date strings YYYY-MM-DD
+      daily_spend   — total spend per day
+      daily_revenue — total revenue per day
+      daily_roas    — ROAS per day (None if no spend)
+      daily_cpa     — CPA per day (None if conversions = 0)
+      budget_line   — total daily budget across all campaigns ($900/day fixed)
+    """
+    yesterday = df["date"].max()
+    start = yesterday - pd.Timedelta(days=days - 1)
+
+    window = df[(df["date"] >= start) & (df["date"] <= yesterday)]
+
+    daily = (
+        window.groupby("date")
+        .agg(
+            spend=("cost", "sum"),
+            revenue=("revenue", "sum"),
+            conversions=("conversions", "sum"),
+        )
+        .reset_index()
+    )
+
+    # Ensure all days are present even if no data
+    all_dates = pd.date_range(start=start, end=yesterday, freq="D")
+    daily = daily.set_index("date").reindex(all_dates, fill_value=0).reset_index()
+    daily.columns = ["date", "spend", "revenue", "conversions"]
+
+    dates        = [d.strftime("%Y-%m-%d") for d in daily["date"]]
+    daily_spend   = [round(float(v), 2) for v in daily["spend"]]
+    daily_revenue = [round(float(v), 2) for v in daily["revenue"]]
+    daily_roas    = [_roas(daily["spend"].iloc[i], daily["revenue"].iloc[i]) for i in range(len(daily))]
+    daily_cpa     = [_cpa(daily["spend"].iloc[i], daily["conversions"].iloc[i]) for i in range(len(daily))]
+
+    # Fixed total daily budget: Solar Leads Q1 = $500, Home Insurance = $400
+    budget_line = [900.0] * len(dates)
+
+    return {
+        "dates":         dates,
+        "daily_spend":   daily_spend,
+        "daily_revenue": daily_revenue,
+        "daily_roas":    daily_roas,
+        "daily_cpa":     daily_cpa,
+        "budget_line":   budget_line,
+    }
+
+
+def compute_account_summary(df: pd.DataFrame, findings: list) -> dict:
+    """
+    Deterministically compute account-level KPIs from the DataFrame.
+
+    The findings list is accepted for API compatibility but the summary is derived
+    entirely from df using fixed rules — not from parsed agent findings — so the
+    output is identical on every run for the same input data.
+
+    Waste rule
+    ----------
+    1. Zero-conversion new keywords (from find_new_search_terms): sum their recent
+       7-day cost.
+    2. CPA spike keywords (from find_anomalies metric='cpa', direction='spike'):
+       excess spend above what the keyword would have cost at its baseline CPA
+       (= recent_cost − recent_conversions × baseline_CPA).
+
+    Parameters
+    ----------
+    df       : full campaign DataFrame
+    findings : agent findings list (unused in computation; retained for signature)
+
+    Returns
+    -------
+    dict with overall_roas, total_spend_7d, wasted_spend_7d, projected_roas.
+    """
+    rec = _recent(df)
+
+    total_revenue = rec["revenue"].sum()
+    total_cost    = rec["cost"].sum()
+
+    overall_roas   = round(total_revenue / total_cost, 1) if total_cost > 0 else None
+    total_spend_7d = round(total_cost)
+
+    wasted = 0.0
+
+    # 1. Zero-conversion new keywords — their entire 7-day cost is waste
+    zero_conv_result = find_new_search_terms(df)
+    zero_kws = {t["keyword"] for t in zero_conv_result.get("new_zero_conversion_terms", [])}
+    if zero_kws:
+        wasted += float(rec[rec["keyword"].isin(zero_kws)]["cost"].sum())
+
+    # 2. CPA spike keywords — excess cost above baseline-CPA expectation
+    cpa_result = find_anomalies(df, metric="cpa")
+    for kw in cpa_result.get("flagged_keywords", []):
+        if kw["direction"] == "spike" and kw["baseline_conversions"] > 0:
+            baseline_cpa  = kw["baseline_cost"] / kw["baseline_conversions"]
+            expected_cost = kw["recent_conversions"] * baseline_cpa
+            excess        = kw["recent_cost"] - expected_cost
+            if excess > 0:
+                wasted += excess
+
+    wasted_spend_7d = round(wasted)
+
+    net_spend = total_spend_7d - wasted_spend_7d
+    if net_spend > 0 and total_revenue > 0:
+        projected_roas = round(total_revenue / net_spend, 1)
+    else:
+        projected_roas = overall_roas
+
+    return {
+        "overall_roas":    overall_roas,
+        "total_spend_7d":  total_spend_7d,
+        "wasted_spend_7d": wasted_spend_7d,
+        "projected_roas":  projected_roas,
+    }
+
+
 def compute_budget_reallocation(df: pd.DataFrame) -> dict:
     """
     Identify which keywords to scale up and which to pause based on recent
@@ -374,6 +499,29 @@ def compute_budget_reallocation(df: pd.DataFrame) -> dict:
 # ── Anthropic tool-use schemas ────────────────────────────────────────────────
 
 TOOL_SCHEMAS = [
+    {
+        "name": "get_account_trends",
+        "description": (
+            "Return daily time-series data for the last 7 days across the entire account. "
+            "CALL THIS FIRST — the results provide the 7-day performance baseline needed "
+            "to contextualize all findings. Note: account_trends and account_summary in the "
+            "final JSON are populated deterministically by the system, not by the agent. "
+            "Returns: dates (array of YYYY-MM-DD strings), daily_spend, daily_revenue, "
+            "daily_roas (null where no spend), daily_cpa (null where no conversions), "
+            "and budget_line (fixed at $900/day: Solar Leads Q1 $500 + Home Insurance $400)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer",
+                    "description": "Number of trailing days to return. Default is 7.",
+                    "default": 7,
+                },
+            },
+            "required": [],
+        },
+    },
     {
         "name": "analyze_roas",
         "description": (
@@ -525,9 +673,10 @@ TOOL_SCHEMAS = [
 # ── Dispatch table ────────────────────────────────────────────────────────────
 
 TOOL_FUNCTIONS = {
-    "analyze_roas":              analyze_roas,
-    "detect_budget_pacing":      detect_budget_pacing,
-    "find_anomalies":            find_anomalies,
-    "find_new_search_terms":     find_new_search_terms,
+    "get_account_trends":          get_account_trends,
+    "analyze_roas":                analyze_roas,
+    "detect_budget_pacing":        detect_budget_pacing,
+    "find_anomalies":              find_anomalies,
+    "find_new_search_terms":       find_new_search_terms,
     "compute_budget_reallocation": compute_budget_reallocation,
 }

@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AdRx Briefing — {{ briefing_date }}</title>
+  <style>
+    /* ── Reset & tokens ──────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+      --bg:         #f8f9fa;
+      --gray-100:   #f1f5f9;
+      --gray-200:   #e2e8f0;
+      --gray-300:   #cbd5e1;
+      --gray-400:   #94a3b8;
+      --gray-500:   #64748b;
+      --gray-600:   #475569;
+      --gray-700:   #334155;
+      --gray-900:   #0f172a;
+      --red:        #dc3545;
+      --red-light:  #fff5f5;
+      --amber:      #ffc107;
+      --amber-light:#fffdf0;
+      --blue:       #0d6efd;
+      --blue-light: #eff6ff;
+      --green:      #198754;
+      --green-light:#f0fdf4;
+      --shadow-sm:  0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--gray-900);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Layout ──────────────────────────────────────────────── */
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 40px;
+    }
+
+    /* ── Header ──────────────────────────────────────────────── */
+    header {
+      background: white;
+      border-bottom: 1px solid var(--gray-200);
+      padding: 40px 0 32px;
+    }
+
+    header .logo {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--gray-400);
+      margin-bottom: 14px;
+    }
+
+    header h1 {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--gray-900);
+      letter-spacing: -0.4px;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      color: var(--gray-500);
+      font-size: 15px;
+    }
+
+    /* ── Sections ────────────────────────────────────────────── */
+    .section {
+      padding: 60px 0 36px;
+    }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--gray-400);
+      margin-bottom: 18px;
+    }
+
+    /* ── Metric cards ────────────────────────────────────────── */
+    .metric-grid {
+      display: flex;
+      gap: 16px;
+    }
+
+    .metric {
+      flex: 1;
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .metric-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--gray-400);
+      margin-bottom: 10px;
+    }
+
+    .metric-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--gray-900);
+      letter-spacing: -0.5px;
+      line-height: 1;
+    }
+
+    .metric-subtitle {
+      font-size: 11px;
+      margin-top: 8px;
+      font-style: italic;
+      opacity: 0.75;
+    }
+
+    /* Waste accent — red left border */
+    .metric.highlight-waste {
+      border-left: 4px solid var(--red);
+      background: var(--red-light);
+    }
+    .metric.highlight-waste .metric-label    { color: var(--red); opacity: 0.8; }
+    .metric.highlight-waste .metric-value    { color: var(--red); }
+    .metric.highlight-waste .metric-subtitle { color: var(--red); }
+
+    /* Gain accent — green left border */
+    .metric.highlight-gain {
+      border-left: 4px solid var(--green);
+      background: var(--green-light);
+    }
+    .metric.highlight-gain .metric-label    { color: var(--green); opacity: 0.8; }
+    .metric.highlight-gain .metric-value    { color: var(--green); }
+    .metric.highlight-gain .metric-subtitle { color: var(--green); }
+
+    /* ── Charts ──────────────────────────────────────────────── */
+    .charts-section {
+      padding: 0 0 40px;
+    }
+
+    .charts-grid {
+      display: flex;
+      gap: 24px;
+    }
+
+    .chart-wrap {
+      flex: 1;
+      min-width: 0;
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+
+    /* ── Findings ────────────────────────────────────────────── */
+    .findings-section {
+      padding: 0 0 60px;
+    }
+
+    .findings-heading {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--gray-900);
+      margin-bottom: 24px;
+    }
+
+    .finding {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: 8px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+
+    .finding.severity-high   { border-left: 4px solid var(--red);   }
+    .finding.severity-medium { border-left: 4px solid var(--amber);  }
+    .finding.severity-low    { border-left: 4px solid var(--blue);   }
+
+    .finding-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 20px 24px 0;
+      flex-wrap: wrap;
+    }
+
+    .priority-badge {
+      font-size: 11px;
+      font-weight: 700;
+      background: var(--gray-100);
+      color: var(--gray-600);
+      padding: 3px 9px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+
+    .severity-badge {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 3px 9px;
+      border-radius: 20px;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    .severity-badge.high   { background: #fff5f5; color: var(--red);   }
+    .severity-badge.medium { background: var(--amber-light); color: #856404; }
+    .severity-badge.low    { background: var(--blue-light);  color: var(--blue); }
+
+    .finding-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--gray-900);
+      line-height: 1.3;
+    }
+
+    .finding-detail {
+      padding: 14px 24px;
+      color: var(--gray-600);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* ── Supporting-data table ───────────────────────────────── */
+    .table-wrap {
+      margin: 0 24px 16px;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--gray-200);
+    }
+
+    .supporting-data {
+      border-collapse: collapse;
+      font-size: 13px;
+      width: 100%;
+    }
+
+    .supporting-data thead th {
+      background: var(--bg);
+      font-weight: 600;
+      color: var(--gray-500);
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--gray-200);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+    .supporting-data thead th:not(:first-child) { text-align: right; }
+
+    .supporting-data tbody td {
+      padding: 10px 12px;
+      color: var(--gray-700);
+      border-bottom: 1px solid var(--gray-100);
+      vertical-align: top;
+    }
+    .supporting-data tbody td:not(:first-child) {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum";
+    }
+    .supporting-data tbody tr:last-child td    { border-bottom: none; }
+    .supporting-data tbody tr:nth-child(even) td { background: var(--bg); }
+
+    /* ── Action row ──────────────────────────────────────────── */
+    .action-row {
+      padding: 14px 24px 20px;
+      border-top: 1px solid var(--gray-100);
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      font-size: 14px;
+      color: var(--gray-700);
+    }
+
+    .action-row .label  { font-weight: 700; color: var(--gray-900); }
+    .action-row .confidence-line {
+      color: var(--gray-400);
+      font-size: 13px;
+    }
+
+    /* ── Footer ──────────────────────────────────────────────── */
+    footer {
+      margin-top: 60px;
+      background: white;
+      border-top: 1px solid var(--gray-200);
+      padding: 24px 0;
+      font-size: 13px;
+      color: var(--gray-500);
+      text-align: center;
+    }
+
+    footer a {
+      color: var(--gray-400);
+      text-decoration: none;
+    }
+    footer a:hover { color: var(--gray-700); }
+
+    /* ── Responsive ──────────────────────────────────────────── */
+    @media (max-width: 860px) {
+      .metric-grid  { flex-wrap: wrap; }
+      .metric       { flex: 1 1 calc(50% - 8px); }
+      .charts-grid  { flex-direction: column; }
+    }
+
+    @media (max-width: 480px) {
+      .container    { padding: 0 20px; }
+      .metric       { flex: 1 1 100%; }
+    }
+
+    /* ── Print ───────────────────────────────────────────────── */
+    @media print {
+      body         { background: white; font-size: 12px; }
+      header       { padding: 20px 0; }
+      .charts-grid { flex-direction: row; }
+      .chart-wrap  { box-shadow: none; border: 1px solid var(--gray-300); break-inside: avoid; }
+      .finding     { break-inside: avoid; box-shadow: none; border: 1px solid var(--gray-300); }
+      footer       { margin-top: 32px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────── -->
+<header>
+  <div class="container">
+    <p class="logo">AdRx · Performance Intelligence</p>
+    <h1>Good morning, {{ user_name }}.</h1>
+    <p class="subtitle">Campaign performance analysis — {{ briefing_date | fmt_date_long }}</p>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ── Account Summary ───────────────────────────────────── -->
+  <section class="section">
+    <p class="section-label">Account Summary · 7-Day Window</p>
+    <div class="metric-grid">
+
+      <div class="metric">
+        <div class="metric-label">Overall ROAS</div>
+        <div class="metric-value">{{ account_summary.overall_roas | fmt_roas }}</div>
+      </div>
+
+      <div class="metric">
+        <div class="metric-label">Total Spend (7d)</div>
+        <div class="metric-value">{{ account_summary.total_spend_7d | fmt_currency }}</div>
+      </div>
+
+      <div class="metric highlight-waste">
+        <div class="metric-label">Wasted Spend (7d)</div>
+        <div class="metric-value">{{ account_summary.wasted_spend_7d | fmt_currency }}</div>
+        <div class="metric-subtitle">recoverable if acted on</div>
+      </div>
+
+      <div class="metric highlight-gain">
+        <div class="metric-label">Projected ROAS</div>
+        <div class="metric-value">{{ account_summary.projected_roas | fmt_roas }}</div>
+        <div class="metric-subtitle">if findings are addressed</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Charts ────────────────────────────────────────────── -->
+  <section class="charts-section">
+    <div class="charts-grid">
+      <div class="chart-wrap">{{ account_health_chart | safe }}</div>
+      <div class="chart-wrap">{{ cpa_trend_chart | safe }}</div>
+    </div>
+  </section>
+
+  <!-- ── Findings ──────────────────────────────────────────── -->
+  <section class="findings-section">
+    <h2 class="findings-heading">Top Findings Impacting Portfolio Performance — Needs Attention</h2>
+
+    {% for finding in findings %}
+    <article class="finding severity-{{ finding.severity }}">
+
+      <div class="finding-header">
+        <span class="priority-badge">#{{ finding.priority }}</span>
+        <span class="severity-badge {{ finding.severity }}">{{ finding.severity | upper }}</span>
+        <h3 class="finding-title">{{ finding.title }}</h3>
+      </div>
+
+      <p class="finding-detail">{{ finding.detail }}</p>
+
+      {% if finding.supporting_data and finding.supporting_data.headers %}
+      <div class="table-wrap">
+        <table class="supporting-data">
+          <thead>
+            <tr>
+              {% for h in finding.supporting_data.headers %}
+              <th>{{ h }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in finding.supporting_data.rows %}
+            <tr>
+              {% for cell in row %}
+              <td>{{ cell }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      <div class="action-row">
+        <div><span class="label">Action:</span> {{ finding.recommendation }}</div>
+        <div><span class="label">Impact:</span> {{ finding.estimated_impact }}</div>
+        <div class="confidence-line"><span class="label">Confidence:</span> {{ finding.confidence }}</div>
+      </div>
+
+    </article>
+    {% endfor %}
+
+  </section>
+
+</div><!-- /.container -->
+
+<!-- ── Footer ────────────────────────────────────────────────── -->
+<footer>
+  <div class="container">
+    <p>Generated by AdRx &middot; <a href="https://github.com/pallavi-oke/adrx">github.com/pallavi-oke/adrx</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
