@@ -159,8 +159,6 @@ ROAS (revenue / cost)
 
 ## What I Learned
 
-## What I Learned
-
 **Agents have a bias toward what the prompt asks them to find.** My first version of AdRx only returned risks — CPA spikes, pacing issues, wasted spend — and completely missed the scale-up opportunities sitting in the same data. Turned out the system prompt was framed entirely around "problems to fix," so the agent never considered "winners to scale." Adding one sentence — "balance risks with opportunities when both exist in the data" — changed the briefing from a list of bad news into something that actually felt useful in the morning.
 
 **3 findings was too few. 5 was right.** I started with a hard cap of 3 findings, reasoning that discipline beats comprehensiveness. But running the agent on real data revealed a tradeoff I hadn't anticipated: three slots filled up with risks and pushed out the opportunities, which made the briefing feel one-sided. Bumping the cap to 5 gave the agent room to balance, and the output landed better. The lesson: prompt constraints that look clean in the abstract have to survive contact with actual outputs.
