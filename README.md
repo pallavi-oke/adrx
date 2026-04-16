@@ -6,7 +6,8 @@
 
 ## Demo
 
-![demo](docs/demo.gif)
+![AdRx Briefing](docs/briefing_04132026.png)
+*A 75-second walkthrough narrated by an AI avatar with my cloned voice is available at [`docs/adrx_final_demo.mp4`](docs/adrx_final_demo.mp4).*
 
 ---
 
